@@ -533,6 +533,23 @@ function onSuccess(entry) {
   loadTally();
 }
 
+// ---- Clean date: converts "Sat Jun 13 2026 00:00:00 GMT+..." to "June 13" ----
+function cleanDate(val) {
+  if (!val || val === '' || val === 'No preference') return 'No preference';
+  // Already clean e.g. "June 13"
+  if (/^[A-Za-z]+ \d+$/.test(String(val).trim())) return String(val).trim();
+  // Try parsing as a date string
+  try {
+    const d = new Date(val);
+    if (!isNaN(d.getTime())) {
+      const months = ['January','February','March','April','May','June',
+                      'July','August','September','October','November','December'];
+      return months[d.getMonth()] + ' ' + d.getDate();
+    }
+  } catch(e) {}
+  return String(val).trim();
+}
+
 // ---- JSONP helper (bypasses CORS for GET requests to Google Apps Script) ----
 function jsonpFetch(url) {
   return new Promise((resolve, reject) => {
@@ -580,7 +597,7 @@ async function loadRegistry() {
   body.innerHTML = guests.map(g => `
     <tr>
       <td>${g.name}</td>
-      <td style="font-size:13px;color:#8b6343;">${g.date || 'No preference'}</td>
+      <td style="font-size:13px;color:#8b6343;">${cleanDate(g.date)}</td>
       <td><span class="${g.attending==='yes'?'badge-yes':'badge-no'}">${g.attending==='yes'?'Attending':'Regrets'}</span></td>
     </tr>
   `).join('');
@@ -593,13 +610,19 @@ async function loadTally() {
   if (USE_LOCAL) {
     localGuests.forEach(g => {
       if (g.date && g.date !== 'No preference') {
-        votes[g.date] = (votes[g.date] || 0) + 1;
+        const d = cleanDate(g.date);
+        votes[d] = (votes[d] || 0) + 1;
       }
     });
   } else {
     try {
       const data = await jsonpFetch(SHEET_URL + '?action=tally');
-      votes = data.votes || {};
+      // Normalise all keys coming back from Sheets
+      const raw = data.votes || {};
+      Object.keys(raw).forEach(k => {
+        const clean = cleanDate(k);
+        votes[clean] = (votes[clean] || 0) + raw[k];
+      });
     } catch(e) {
       console.warn('Tally fetch failed, using local:', e);
       localGuests.forEach(g => {
@@ -681,6 +704,7 @@ function exportCSV() {
 // ---- INIT ----
 initParticles();
 </script>
+
 
 </body>
 </html>
